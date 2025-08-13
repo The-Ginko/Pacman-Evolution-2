@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pacman: Evolution 2</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Press Start 2P', cursive;
+        }
+        #game-container {
+            border: 2px solid #000; /* Border is now handled on canvas */
+            line-height: 0;
+        }
+        #info-header {
+            width: 448px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 16px;
+            padding-bottom: 10px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="info-header">
+        <span>Score: <span id="score-display">0</span></span>
+        <span>Lives: <span id="lives-display">3</span></span>
+    </div>
+    <div id="game-container"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.17.1/matter.min.js"></script>
+    <script>
+        // Game Engine Setup
+        const { Engine, Render, Runner, World, Bodies, Body, Events, Common, Vector } = Matter;
+
+        const engine = Engine.create();
+        const world = engine.world;
+        world.gravity.y = 0;
+
+        // Game constants
+        const TILE_SIZE = 16;
+        const MAZE_WIDTH_TILES = 28;
+        const MAZE_HEIGHT_TILES = 36;
+        const GAME_WIDTH = TILE_SIZE * MAZE_WIDTH_TILES;
+        const GAME_HEIGHT = TILE_SIZE * MAZE_HEIGHT_TILES;
+        const FRAME_TIME_MS = 1000 / 60; // ~16.67ms per frame
+        const MAX_SPEED_PER_FRAME = (75.75757625 / 60) * 1.5; // Base speed unit, adjusted for gameplay feel
+
+        // --- COLLISION CATEGORIES ---
+        const collisionCategories = {
+            wall: 0x0001,
+            ghost: 0x0002,
+            pacman: 0x0004,
+            dot: 0x0008
+        };
+
+        // --- SPEED TABLES ---
+        const pacmanSpeedTable = [
+            /* Lvl 1   */ { normal: 0.80, fright: 0.90 },
+            /* Lvl 2-4 */ { normal: 0.90, fright: 0.95 },
+            /* Lvl 5-20*/ { normal: 1.00, fright: 1.00 },
+            /* Lvl 21+ */ { normal: 0.90, fright: -1   } // -1 indicates no fright speed
+        ];
+        const ghostSpeedTable = [
+            /* Lvl 1   */ { normal: 0.75, tunnel: 0.40, fright: 0.50 },
+            /* Lvl 2-4 */ { normal: 0.85, tunnel: 0.45, fright: 0.55 },
+            /* Lvl 5-20*/ { normal: 0.95, tunnel: 0.50, fright: 0.60 },
+            /* Lvl 21+ */ { normal: 0.95, tunnel: 0.50, fright: -1   }
+        ];
+
+        // Level-specific data
+        const levelData = [
+            { frightTime: 6000, flashes: 5 }, { frightTime: 5000, flashes: 5 }, { frightTime: 4000, flashes: 5 },
+            { frightTime: 3000, flashes: 5 }, { frightTime: 2000, flashes: 5 }, { frightTime: 5000, flashes: 5 },
+            { frightTime: 2000, flashes: 5 }, { frightTime: 2000, flashes: 5 }, { frightTime: 1000, flashes: 3 },
+            { frightTime: 5000, flashes: 5 }, { frightTime: 2000, flashes: 5 }, { frightTime: 1000, flashes: 3 },
+            { frightTime: 1000, flashes: 3 }, { frightTime: 3000, flashes: 5 }, { frightTime: 1000, flashes: 3 },
+            { frightTime: 1000, flashes: 3 }, { frightTime: 0, flashes: 0 },    { frightTime: 1000, flashes: 3 },
+            { frightTime: 0, flashes: 0 },    { frightTime: 0, flashes: 0 },    { frightTime: 0, flashes: 0 }
+        ];
+
+        // Renderer Setup
+        const render = Render.create({
+            element: document.getElementById('game-container'),
+            engine: engine,
+            options: {
+                width: GAME_WIDTH,
+                height: GAME_HEIGHT,
+                wireframes: false,
+                background: '#000'
+            }
+        });
+
+        Render.run(render);
+        const runner = Runner.create();
+        Runner.run(runner, engine);
+
+        // Game State
+        let gameState = 'playing'; // playing, dying, gameOver
+        let score = 0;
+        let lives = 2;
+        let level = 1;
+        let dots = [];
+        let energizers = [];
+        let ghosts = {};
+        let walls = [];
+        let globalDotsEaten = 0;
+        let dotsEatenSinceDeath = 0;
+        let lifeLost = false;
+        let currentMode = 'scatter';
+        let previousMode = 'scatter';
+        let modeChangeTimer = null;
+        let frightenedTimer = null;
+        let frightFlashTimer = null;
+        let ghostsEatenThisPowerup = 0;
+        let pacmanDir = {x: -1, y: 0};
+        let requestedDir = {x: -1, y: 0};
+        let pacmanPausedFrames = 0;
+        let deathAnimation = { active: false, progress: 0, pos: {x:0, y:0} };
+
+        // Maze Layout: 0-Path, 1-Wall, 2-Dot, 3-Energizer, 4-Door, 5-House, 6-UI, T-Tunnel, S-Slow Zone
+        const mazeLayout = [
+            [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],[1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1],
+            [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],[1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],[1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+            [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,1,1,1,4,4,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,5,5,5,5,5,5,1,0,1,1,2,1,1,1,1,1,1],['T','S','S','S',0,0,2,0,0,0,1,5,5,5,5,5,5,1,0,0,0,2,0,0,'S','S','S','T'],
+            [1,1,1,1,1,1,2,1,1,0,1,5,5,5,5,5,5,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1],[1,2,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,2,1],
+            [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],[1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],[1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+            [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],[1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]
+        ];
+
+        // Helper Functions
+        const getTileCenter = (x, y) => ({ x: x * TILE_SIZE + TILE_SIZE / 2, y: y * TILE_SIZE + TILE_SIZE / 2 });
+        const getTileCoords = (pos) => ({ x: Math.floor(pos.x / TILE_SIZE), y: Math.floor(pos.y / TILE_SIZE) });
+        const getDistance = (pos1, pos2) => Math.sqrt(Math.pow(pos1.x - pos2.x, 2) + Math.pow(pos1.y - pos2.y, 2));
+        const isWall = (x, y) => !mazeLayout[y] || mazeLayout[y][x] === 1 || mazeLayout[y][x] === 4;
+
+        // --- SPEED CALCULATION ---
+        function getSpeed(character) {
+            const currentLevel = level;
+            const tableIndex = currentLevel === 1 ? 0 : currentLevel >= 2 && currentLevel <= 4 ? 1 : currentLevel >= 5 && currentLevel <= 20 ? 2 : 3;
+            
+            if (character.label === 'pacman') {
+                const speedData = pacmanSpeedTable[tableIndex];
+                const multiplier = currentMode === 'frightened' ? speedData.fright : speedData.normal;
+                return MAX_SPEED_PER_FRAME * multiplier;
+            } else { // It's a ghost
+                const speedData = ghostSpeedTable[tableIndex];
+                const ghostTile = getTileCoords(character.position);
+                const tileType = mazeLayout[ghostTile.y] ? mazeLayout[ghostTile.y][ghostTile.x] : null;
+
+                if (tileType === 'T' || tileType === 'S') {
+                    return MAX_SPEED_PER_FRAME * speedData.tunnel;
+                }
+                if (character.state === 'frightened') {
+                    return MAX_SPEED_PER_FRAME * speedData.fright;
+                }
+                if (character.state === 'eaten') {
+                    return MAX_SPEED_PER_FRAME * 2; // Eaten ghosts move faster
+                }
+                return MAX_SPEED_PER_FRAME * speedData.normal;
+            }
+        }
+
+        // Create Maze Objects
+        for (let y = 0; y < mazeLayout.length; y++) {
+            for (let x = 0; x < mazeLayout[y].length; x++) {
+                const type = mazeLayout[y][x];
+                const pos = getTileCenter(x, y);
+                let body;
+                if (type === 1) {
+                    body = Bodies.rectangle(pos.x, pos.y, TILE_SIZE, TILE_SIZE, { 
+                        isStatic: true, 
+                        render: { visible: false },
+                        collisionFilter: { category: collisionCategories.wall },
+                        friction: 0
+                    });
+                    walls.push(body);
+                    World.add(world, body);
+                } else if (type === 2) {
+                    body = Bodies.circle(pos.x, pos.y, TILE_SIZE / 5, { isStatic: true, isSensor: true, label: 'dot', render: { fillStyle: '#FFFFFF' } });
+                    dots.push(body);
+                    World.add(world, body);
+                } else if (type === 3) {
+                    body = Bodies.circle(pos.x, pos.y, TILE_SIZE / 2.5, { isStatic: true, isSensor: true, label: 'energizer', render: { fillStyle: '#FFFFFF' } });
+                    energizers.push(body);
+                    World.add(world, body);
+                } else if (type === 4) {
+                    body = Bodies.rectangle(pos.x, pos.y, TILE_SIZE, TILE_SIZE/2, { isStatic: true, isSensor: true, label: 'ghost-door', render: { fillStyle: '#FFB8FF' } });
+                    World.add(world, body);
+                }
+            }
+        }
+
+        // Create Pacman
+        const pacmanStartPos = getTileCenter(13.5, 26);
+        const pacman = Bodies.circle(pacmanStartPos.x, pacmanStartPos.y, TILE_SIZE / 2 - 2, { // Slightly smaller radius
+            label: 'pacman', render: { fillStyle: 'yellow' }, density: 0.001, friction: 0, frictionAir: 0, restitution: 0,
+            collisionFilter: {
+                category: collisionCategories.pacman,
+                mask: collisionCategories.wall | collisionCategories.ghost | collisionCategories.dot
+            }
+        });
+        World.add(world, pacman);
+
+        // Create Ghosts
+        const ghostData = {
+            blinky: { color: '#FF0000', startPos: getTileCenter(13.5, 14), scatterTarget: { x: 25, y: 0 } },
+            pinky:  { color: '#FFB8FF', startPos: getTileCenter(13.5, 17), scatterTarget: { x: 2, y: 0 } },
+            inky:   { color: '#00FFFF', startPos: getTileCenter(11.5, 17), scatterTarget: { x: 27, y: 35 } },
+            clyde:  { color: '#FFB851', startPos: getTileCenter(15.5, 17), scatterTarget: { x: 0, y: 35 } }
+        };
+        const ghostReleaseOrder = ['pinky', 'inky', 'clyde'];
+        const ghostReleaseDots = { pinky: 0, inky: 30, clyde: 60 };
+        const ghostReleaseDotsAfterDeath = { pinky: 7, inky: 17, clyde: 32 };
+
+        for (const name in ghostData) {
+            const data = ghostData[name];
+            ghosts[name] = Bodies.circle(data.startPos.x, data.startPos.y, TILE_SIZE / 2 - 2, { // Slightly smaller radius
+                label: `ghost-${name}`, render: { fillStyle: data.color },
+                friction: 0, frictionAir: 0, density: 0.001,
+                collisionFilter: {
+                    category: collisionCategories.ghost,
+                    mask: collisionCategories.wall | collisionCategories.pacman // Can collide with walls and pacman
+                }
+            });
+            ghosts[name].originalColor = data.color;
+            ghosts[name].startPos = data.startPos;
+            ghosts[name].state = (name === 'blinky') ? 'active' : 'inPen';
+            ghosts[name].scatterTarget = data.scatterTarget;
+            ghosts[name].targetTile = data.scatterTarget;
+            ghosts[name].currentDir = 'left';
+            World.add(world, ghosts[name]);
+        }
+
+        // --- GHOST AI ---
+        function updateGhostAI() {
+            for (const name in ghosts) {
+                const ghost = ghosts[name];
+                const ghostSpeed = getSpeed(ghost);
+                
+                if (ghost.state === 'inPen' || ghost.state === 'leaving' || ghost.state === 'eaten') {
+                    handleGhostPenStates(ghost, ghostSpeed);
+                    continue;
+                }
+                
+                const ghostTile = getTileCoords(ghost.position);
+                const centerOfTile = getTileCenter(ghostTile.x, ghostTile.y);
+
+                if (getDistance(ghost.position, centerOfTile) < ghostSpeed) {
+                    const possibleDirs = {};
+                    if (!isWall(ghostTile.x, ghostTile.y - 1)) possibleDirs.up = { x: 0, y: -1 };
+                    if (!isWall(ghostTile.x, ghostTile.y + 1)) possibleDirs.down = { x: 0, y: 1 };
+                    if (!isWall(ghostTile.x - 1, ghostTile.y)) possibleDirs.left = { x: -1, y: 0 };
+                    if (!isWall(ghostTile.x + 1, ghostTile.y)) possibleDirs.right = { x: 1, y: 0 };
+                    
+                    const isRestrictedZone = (ghostTile.y === 14 || ghostTile.y === 23) && (ghostTile.x >= 11 && ghostTile.x <= 16);
+                    if (ghost.state !== 'frightened' && isRestrictedZone) {
+                        delete possibleDirs.up;
+                    }
+
+                    if (ghost.currentDir === 'up') delete possibleDirs.down;
+                    if (ghost.currentDir === 'down') delete possibleDirs.up;
+                    if (ghost.currentDir === 'left') delete possibleDirs.right;
+                    if (ghost.currentDir === 'right') delete possibleDirs.left;
+
+                    let bestDir = '';
+                    if (ghost.state === 'frightened') {
+                        const choices = Object.keys(possibleDirs);
+                        bestDir = choices.length > 0 ? choices[Math.floor(Math.random() * choices.length)] : ghost.currentDir;
+                    } else {
+                        if (currentMode === 'chase') ghost.targetTile = getGhostTarget(name);
+                        else if (currentMode === 'scatter') ghost.targetTile = ghost.scatterTarget;
+                        
+                        let minDistance = Infinity;
+                        for (const dir in possibleDirs) {
+                            const nextTile = { x: ghostTile.x + possibleDirs[dir].x, y: ghostTile.y + possibleDirs[dir].y };
+                            const dist = getDistance(nextTile, ghost.targetTile);
+                            if (dist < minDistance) {
+                                minDistance = dist;
+                                bestDir = dir;
+                            }
+                        }
+                    }
+                    
+                    if (bestDir && possibleDirs[bestDir]) {
+                        ghost.currentDir = bestDir;
+                        const velocity = possibleDirs[bestDir];
+                        Body.setPosition(ghost, centerOfTile);
+                        Body.setVelocity(ghost, { x: velocity.x * ghostSpeed, y: velocity.y * ghostSpeed });
+                    }
+                }
+            }
+        }
+
+        function handleGhostPenStates(ghost, speed) {
+            if (ghost.state === 'inPen') {
+                const newY = ghost.startPos.y + Math.sin(Date.now() / 250) * 4;
+                Body.setVelocity(ghost, { x: 0, y: (newY - ghost.position.y) * 0.1 });
+            } else if (ghost.state === 'leaving') {
+                const exitPos = getTileCenter(13.5, 14);
+                if (getDistance(ghost.position, exitPos) < TILE_SIZE / 2) {
+                    ghost.state = 'active';
+                    Body.setPosition(ghost, exitPos);
+                } else {
+                    const direction = Vector.normalise(Vector.sub(exitPos, ghost.position));
+                    Body.setVelocity(ghost, Vector.mult(direction, speed));
+                }
+            } else if (ghost.state === 'eaten') {
+                const penTarget = getTileCenter(13.5, 14);
+                if (getDistance(ghost.position, penTarget) < TILE_SIZE) {
+                    ghost.state = 'inPen';
+                    ghost.collisionFilter.mask = collisionCategories.wall | collisionCategories.pacman; // Restore collision
+                    Body.setPosition(ghost, ghost.startPos);
+                    ghost.render.fillStyle = ghost.originalColor;
+                } else {
+                    const direction = Vector.normalise(Vector.sub(penTarget, ghost.position));
+                    Body.setVelocity(ghost, Vector.mult(direction, speed));
+                }
+            }
+        }
+
+        function getGhostTarget(name) {
+            const pacmanTile = getTileCoords(pacman.position);
+            switch(name) {
+                case 'blinky': return pacmanTile;
+                case 'pinky':
+                    let pinkyTarget = { ...pacmanTile };
+                    if (pacmanDir.y === -1) { pinkyTarget.y -= 4; pinkyTarget.x -= 4; } // Up
+                    else if (pacmanDir.y === 1) { pinkyTarget.y += 4; } // Down
+                    else if (pacmanDir.x === -1) { pinkyTarget.x -= 4; } // Left
+                    else if (pacmanDir.x === 1) { pinkyTarget.x += 4; } // Right
+                    return pinkyTarget;
+                case 'inky':
+                    const blinkyTile = getTileCoords(ghosts.blinky.position);
+                    let offsetTile = { ...pacmanTile };
+                    if (pacmanDir.y === -1) { offsetTile.y -= 2; } // Up
+                    else if (pacmanDir.y === 1) { offsetTile.y += 2; } // Down
+                    else if (pacmanDir.x === -1) { offsetTile.x -= 2; } // Left
+                    else if (pacmanDir.x === 1) { offsetTile.x += 2; } // Right
+                    return { x: blinkyTile.x + (offsetTile.x - blinkyTile.x) * 2, y: blinkyTile.y + (offsetTile.y - blinkyTile.y) * 2 };
+                case 'clyde':
+                    return getDistance(getTileCoords(ghosts.clyde.position), pacmanTile) > 8 ? pacmanTile : ghosts.clyde.scatterTarget;
+            }
+        }
+
+        const modeTimings = [
+            { mode: 'scatter', time: 7000 }, { mode: 'chase', time: 20000 },
+            { mode: 'scatter', time: 7000 }, { mode: 'chase', time: 20000 },
+            { mode: 'scatter', time: 5000 }, { mode: 'chase', time: 20000 },
+            { mode: 'scatter', time: 5000 }, { mode: 'chase', time: Infinity }
+        ];
+        let modeIndex = 0;
+
+        function setGameMode(mode) {
+             if (currentMode === 'frightened') {
+                 previousMode = mode;
+                 return;
+             }
+             currentMode = mode;
+             for (const name in ghosts) {
+                 if (ghosts[name].state === 'active' || ghosts[name].state === 'frightened') {
+                    const vel = ghosts[name].velocity;
+                    Body.setVelocity(ghosts[name], {x: -vel.x, y: -vel.y});
+                    if (ghosts[name].currentDir === 'up') ghosts[name].currentDir = 'down';
+                    else if (ghosts[name].currentDir === 'down') ghosts[name].currentDir = 'up';
+                    else if (ghosts[name].currentDir === 'left') ghosts[name].currentDir = 'right';
+                    else if (ghosts[name].currentDir === 'right') ghosts[name].currentDir = 'left';
+                 }
+             }
+        }
+
+        function scheduleNextMode() {
+            clearTimeout(modeChangeTimer);
+            if (modeIndex >= modeTimings.length) return;
+            const current = modeTimings[modeIndex];
+            setGameMode(current.mode);
+            if (current.time !== Infinity) {
+                modeChangeTimer = setTimeout(() => {
+                    modeIndex++;
+                    scheduleNextMode();
+                }, current.time);
+            }
+        }
+        
+        function startFrightenedMode() {
+            clearTimeout(frightenedTimer);
+            clearInterval(frightFlashTimer);
+            clearTimeout(modeChangeTimer);
+            
+            const lvlIndex = Math.min(level - 1, levelData.length - 1);
+            const data = levelData[lvlIndex];
+            if (data.frightTime === 0) return;
+
+            previousMode = currentMode;
+            currentMode = 'frightened';
+            ghostsEatenThisPowerup = 0;
+
+            for (const name in ghosts) {
+                const ghost = ghosts[name];
+                if (ghost.state !== 'eaten') {
+                    if (ghost.state !== 'frightened') {
+                        ghost.stateBeforeFright = ghost.state;
+                    }
+                    if (ghost.state === 'active') {
+                        const vel = ghost.velocity;
+                        Body.setVelocity(ghost, {x: -vel.x, y: -vel.y});
+                    }
+                    ghost.state = 'frightened';
+                    ghost.render.fillStyle = '#2121DE';
+                }
+            }
+            
+            const flashInterval = 16 * FRAME_TIME_MS;
+            const totalFlashes = data.flashes * 2;
+            const totalFlashTime = totalFlashes * flashInterval;
+            const solidBlueTime = data.frightTime - totalFlashTime;
+
+            frightenedTimer = setTimeout(() => startFlashing(totalFlashes, flashInterval), solidBlueTime > 0 ? solidBlueTime : 0);
+        }
+
+        function startFlashing(flashesLeft, interval) {
+            frightFlashTimer = setInterval(() => {
+                if (flashesLeft <= 0 || currentMode !== 'frightened') {
+                    clearInterval(frightFlashTimer);
+                    endFrightenedMode();
+                    return;
+                }
+                for (const name in ghosts) {
+                    const ghost = ghosts[name];
+                    if (ghost.state === 'frightened') {
+                        ghost.render.fillStyle = (flashesLeft % 2 === 0) ? '#FFFFFF' : '#2121DE';
+                    }
+                }
+                flashesLeft--;
+            }, interval);
+        }
+
+        function endFrightenedMode() {
+            clearInterval(frightFlashTimer);
+            clearTimeout(frightenedTimer);
+            if (currentMode !== 'frightened') return;
+            currentMode = previousMode;
+            for (const name in ghosts) {
+                const ghost = ghosts[name];
+                if (ghost.state === 'frightened') {
+                    ghost.state = ghost.stateBeforeFright || 'active';
+                    ghost.render.fillStyle = ghost.originalColor;
+                }
+            }
+            scheduleNextMode();
+        }
+
+        function checkGhostRelease() {
+            const releaseCounters = lifeLost ? ghostReleaseDotsAfterDeath : ghostReleaseDots;
+            const dotCount = lifeLost ? dotsEatenSinceDeath : globalDotsEaten;
+
+            for (const name of ghostReleaseOrder) {
+                const ghost = ghosts[name];
+                if (ghost.state === 'inPen' && dotCount >= releaseCounters[name]) {
+                    ghost.state = 'leaving';
+                }
+            }
+        }
+
+        function startDeathSequence() {
+            gameState = 'dying';
+            deathAnimation.active = true;
+            deathAnimation.progress = 0;
+            deathAnimation.pos = pacman.position;
+            
+            for(const name in ghosts) { ghosts[name].render.visible = false; }
+            pacman.render.visible = false;
+
+            setTimeout(() => {
+                const animationDuration = 124 * FRAME_TIME_MS;
+                const startTime = Date.now();
+                function animateDeath() {
+                    const elapsedTime = Date.now() - startTime;
+                    deathAnimation.progress = elapsedTime / animationDuration;
+                    if (elapsedTime < animationDuration) {
+                        requestAnimationFrame(animateDeath);
+                    } else {
+                        deathAnimation.active = false;
+                        setTimeout(resetAfterDeath, 60 * FRAME_TIME_MS);
+                    }
+                }
+                requestAnimationFrame(animateDeath);
+            }, 10 * FRAME_TIME_MS);
+        }
+
+        function resetAfterDeath() {
+            lives--;
+            if (lives < 0) {
+                gameState = 'gameOver';
+            } else {
+                lifeLost = true;
+                dotsEatenSinceDeath = 0;
+                
+                Body.setPosition(pacman, pacmanStartPos);
+                pacmanDir = {x: -1, y: 0};
+                requestedDir = {x: -1, y: 0};
+                pacman.render.visible = true;
+
+                for (const name in ghosts) {
+                    const ghost = ghosts[name];
+                    Body.setPosition(ghost, ghost.startPos);
+                    ghost.state = (name === 'blinky') ? 'active' : 'inPen';
+                    ghost.render.visible = true;
+                    ghost.render.fillStyle = ghost.originalColor;
+                    ghost.collisionFilter.mask = collisionCategories.wall | collisionCategories.pacman;
+                }
+
+                modeIndex = 0;
+                scheduleNextMode();
+                gameState = 'playing';
+            }
+        }
+        
+        document.addEventListener('keydown', (event) => {
+            if (gameState !== 'playing') return;
+            switch (event.key) {
+                case 'ArrowUp': requestedDir = { x: 0, y: -1 }; break;
+                case 'ArrowDown': requestedDir = { x: 0, y: 1 }; break;
+                case 'ArrowLeft': requestedDir = { x: -1, y: 0 }; break;
+                case 'ArrowRight': requestedDir = { x: 1, y: 0 }; break;
+            }
+        });
+
+        function updatePacmanMovement() {
+            if (pacmanPausedFrames > 0) return;
+
+            const pacmanSpeed = getSpeed(pacman);
+            const currentTile = getTileCoords(pacman.position);
+            
+            // Try to apply buffered direction change
+            if (requestedDir.x !== pacmanDir.x || requestedDir.y !== pacmanDir.y) {
+                const nextTileInNewDir = { x: currentTile.x + requestedDir.x, y: currentTile.y + requestedDir.y };
+                if (!isWall(nextTileInNewDir.x, nextTileInNewDir.y)) {
+                    const centerOfCurrentTile = getTileCenter(currentTile.x, currentTile.y);
+                    // If moving horizontally and close to center, snap and turn
+                    if (pacmanDir.x !== 0 && Math.abs(pacman.position.y - centerOfCurrentTile.y) < pacmanSpeed) {
+                        Body.setPosition(pacman, { x: pacman.position.x, y: centerOfCurrentTile.y });
+                        pacmanDir = { ...requestedDir };
+                    }
+                    // If moving vertically and close to center, snap and turn
+                    else if (pacmanDir.y !== 0 && Math.abs(pacman.position.x - centerOfCurrentTile.x) < pacmanSpeed) {
+                        Body.setPosition(pacman, { x: centerOfCurrentTile.x, y: pacman.position.y });
+                        pacmanDir = { ...requestedDir };
+                    }
+                }
+            }
+
+            // Check for wall in current direction
+            const nextTileInCurrentDir = { x: currentTile.x + pacmanDir.x, y: currentTile.y + pacmanDir.y };
+            if (isWall(nextTileInCurrentDir.x, nextTileInCurrentDir.y)) {
+                const centerOfCurrentTile = getTileCenter(currentTile.x, currentTile.y);
+                if (getDistance(pacman.position, centerOfCurrentTile) < pacmanSpeed) {
+                    Body.setPosition(pacman, centerOfCurrentTile);
+                    Body.setVelocity(pacman, { x: 0, y: 0 });
+                    return;
+                }
+            }
+            
+            // Set velocity based on final direction
+            Body.setVelocity(pacman, { x: pacmanDir.x * pacmanSpeed, y: pacmanDir.y * pacmanSpeed });
+        }
+
+
+        Events.on(engine, 'beforeUpdate', (event) => {
+            if (gameState !== 'playing') {
+                 Body.setVelocity(pacman, {x:0, y:0});
+                 for(const name in ghosts) { Body.setVelocity(ghosts[name], {x:0, y:0}); }
+                 return;
+            }
+
+            if (pacmanPausedFrames > 0) {
+                pacmanPausedFrames--;
+                Body.setVelocity(pacman, {x:0, y:0});
+            } else {
+                updatePacmanMovement();
+            }
+            
+            const pacmanTile = getTileCoords(pacman.position);
+            if (pacmanTile.x <= 0 && pacmanTile.y === 17) Body.setPosition(pacman, {x: GAME_WIDTH - TILE_SIZE * 1.5, y: pacman.position.y});
+            else if (pacmanTile.x >= MAZE_WIDTH_TILES - 1 && pacmanTile.y === 17) Body.setPosition(pacman, {x: TILE_SIZE * 1.5, y: pacman.position.y});
+
+            updateGhostAI();
+        });
+
+        Events.on(engine, 'collisionStart', (event) => {
+            if (gameState !== 'playing') return;
+            const pairs = event.pairs;
+            for (let i = 0; i < pairs.length; i++) {
+                const pair = pairs[i];
+                const bodyA = pair.bodyA;
+                const bodyB = pair.bodyB;
+
+                const isPacmanInvolved = bodyA.label === 'pacman' || bodyB.label === 'pacman';
+                if (!isPacmanInvolved) continue;
+
+                const otherBody = bodyA.label === 'pacman' ? bodyB : bodyA;
+
+                if (otherBody.label === 'dot') {
+                    pacmanPausedFrames = 1;
+                    score += 10;
+                    globalDotsEaten++;
+                    if(lifeLost) dotsEatenSinceDeath++;
+                    checkGhostRelease();
+                    World.remove(world, otherBody);
+                } else if (otherBody.label === 'energizer') {
+                    pacmanPausedFrames = 3;
+                    score += 50;
+                    startFrightenedMode();
+                    World.remove(world, otherBody);
+                } else if (otherBody.label.startsWith('ghost-')) {
+                    const ghost = Object.values(ghosts).find(g => g.id === otherBody.id);
+                    if (ghost.state === 'frightened') {
+                        ghostsEatenThisPowerup++;
+                        score += Math.pow(2, ghostsEatenThisPowerup) * 100;
+                        ghost.state = 'eaten';
+                        ghost.collisionFilter.mask = collisionCategories.wall; // Eaten ghosts only collide with walls
+                        ghost.render.fillStyle = '#FFFFFF';
+                    } else if (ghost.state === 'active') {
+                        startDeathSequence();
+                    }
+                }
+            }
+        });
+        
+        Events.on(render, 'afterRender', () => {
+            const context = render.context;
+            context.beginPath();
+            for (let y = 0; y < mazeLayout.length; y++) {
+                for (let x = 0; x < mazeLayout[y].length; x++) {
+                    if (mazeLayout[y][x] === 1) {
+                         context.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+            context.fillStyle = '#0000FF';
+            context.fill();
+            
+            context.font = "16px 'Press Start 2P'";
+            context.fillStyle = "white";
+            context.textAlign = "left";
+            context.fillText("1UP", TILE_SIZE, TILE_SIZE * 2);
+            context.fillText(score.toString(), TILE_SIZE, TILE_SIZE * 3);
+            context.textAlign = "center";
+            context.fillText("HIGH SCORE", GAME_WIDTH / 2, TILE_SIZE * 2);
+            context.fillText("3333360", GAME_WIDTH / 2, TILE_SIZE * 3);
+
+            if (deathAnimation.active) {
+                const p = deathAnimation.progress;
+                const radius = (TILE_SIZE / 2) * (1 - p);
+                const angle = 0.25 * Math.PI + (1.5 * Math.PI * p);
+                context.beginPath();
+                context.arc(deathAnimation.pos.x, deathAnimation.pos.y, radius, angle, 2 * Math.PI - angle);
+                context.lineTo(deathAnimation.pos.x, deathAnimation.pos.y);
+                context.closePath();
+                context.fillStyle = 'yellow';
+                context.fill();
+            }
+
+            if (gameState === 'gameOver') {
+                context.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                context.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+                context.fillStyle = 'red';
+                context.textAlign = 'center';
+                context.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+            }
+
+            for (let i = 0; i < lives; i++) {
+                const lifePos = getTileCenter(2 + (i * 2), 34.5);
+                context.beginPath();
+                context.arc(lifePos.x, lifePos.y, TILE_SIZE / 2, 0.25 * Math.PI, 1.75 * Math.PI, false);
+                context.lineTo(lifePos.x, lifePos.y);
+                context.closePath();
+                context.fillStyle = 'yellow';
+                context.fill();
+            }
+            const fruitPos = getTileCenter(25, 34.5);
+            context.beginPath();
+            context.arc(fruitPos.x - 4, fruitPos.y, 5, 0, 2 * Math.PI);
+            context.arc(fruitPos.x + 4, fruitPos.y - 2, 5, 0, 2 * Math.PI);
+            context.fillStyle = 'red';
+            context.fill();
+            context.beginPath();
+            context.moveTo(fruitPos.x, fruitPos.y - 4);
+            context.lineTo(fruitPos.x + 8, fruitPos.y - 12);
+            context.strokeStyle = 'green';
+            context.lineWidth = 2;
+            context.stroke();
+        });
+
+        // Start the game
+        checkGhostRelease();
+        scheduleNextMode();
+
+    </script>
+</body>
+</html>
