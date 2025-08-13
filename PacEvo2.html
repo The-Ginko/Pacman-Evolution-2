@@ -52,6 +52,28 @@
         const FRAME_TIME_MS = 1000 / 60; // ~16.67ms per frame
         const MAX_SPEED_PER_FRAME = (75.75757625 / 60) * 1.5; // Base speed unit, adjusted for gameplay feel
 
+        // Maze Layout: 0-Path, 1-Wall, 2-Dot, 3-Energizer, 4-Door, 5-House, 6-UI, T-Tunnel, S-Slow Zone
+        const mazeLayout = [
+            [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],[1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1],
+            [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],[1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],[1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+            [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,1,1,1,4,4,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,5,5,5,5,5,5,1,0,1,1,2,1,1,1,1,1,1],['T','S','S','S',0,0,2,0,0,0,1,5,5,5,5,5,5,1,0,0,0,2,0,0,'S','S','S','T'],
+            [1,1,1,1,1,1,2,1,1,0,1,5,5,5,5,5,5,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
+            [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1],[1,2,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,2,1],
+            [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],[1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],[1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+            [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],[1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]
+        ];
+        
+        // Helper Functions (Moved up to prevent initialization errors)
+        const getTileCenter = (x, y) => ({ x: x * TILE_SIZE + TILE_SIZE / 2, y: y * TILE_SIZE + TILE_SIZE / 2 });
+        const getTileCoords = (pos) => ({ x: Math.floor(pos.x / TILE_SIZE), y: Math.floor(pos.y / TILE_SIZE) });
+        const getDistance = (pos1, pos2) => Math.sqrt(Math.pow(pos1.x - pos2.x, 2) + Math.pow(pos1.y - pos2.y, 2));
+        const isWall = (x, y) => !mazeLayout[y] || mazeLayout[y][x] === 1 || mazeLayout[y][x] === 4;
+
         // --- COLLISION CATEGORIES ---
         const collisionCategories = {
             wall: 0x0001,
@@ -123,28 +145,7 @@
         let requestedDir = {x: -1, y: 0};
         let pacmanPausedFrames = 0;
         let deathAnimation = { active: false, progress: 0, pos: {x:0, y:0} };
-
-        // Maze Layout: 0-Path, 1-Wall, 2-Dot, 3-Energizer, 4-Door, 5-House, 6-UI, T-Tunnel, S-Slow Zone
-        const mazeLayout = [
-            [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
-            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],[1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1],
-            [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-            [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],[1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],[1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
-            [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
-            [1,1,1,1,1,1,2,1,1,0,1,1,1,4,4,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,5,5,5,5,5,5,1,0,1,1,2,1,1,1,1,1,1],['T','S','S','S',0,0,2,0,0,0,1,5,5,5,5,5,5,1,0,0,0,2,0,0,'S','S','S','T'],
-            [1,1,1,1,1,1,2,1,1,0,1,5,5,5,5,5,5,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1],
-            [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
-            [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],[1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1],[1,2,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,2,1],
-            [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],[1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],[1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
-            [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],[1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]
-        ];
-
-        // Helper Functions
-        const getTileCenter = (x, y) => ({ x: x * TILE_SIZE + TILE_SIZE / 2, y: y * TILE_SIZE + TILE_SIZE / 2 });
-        const getTileCoords = (pos) => ({ x: Math.floor(pos.x / TILE_SIZE), y: Math.floor(pos.y / TILE_SIZE) });
-        const getDistance = (pos1, pos2) => Math.sqrt(Math.pow(pos1.x - pos2.x, 2) + Math.pow(pos1.y - pos2.y, 2));
-        const isWall = (x, y) => !mazeLayout[y] || mazeLayout[y][x] === 1 || mazeLayout[y][x] === 4;
+        let pacmanTargetPos = getTileCenter(13.5, 26); // The "leash" target
 
         // --- SPEED CALCULATION ---
         function getSpeed(character) {
@@ -184,7 +185,10 @@
                         isStatic: true, 
                         render: { visible: false },
                         collisionFilter: { category: collisionCategories.wall },
-                        friction: 0
+                        friction: 0,
+                        frictionAir: 0,
+                        frictionStatic: 0,
+                        restitution: 0
                     });
                     walls.push(body);
                     World.add(world, body);
@@ -206,7 +210,13 @@
         // Create Pacman
         const pacmanStartPos = getTileCenter(13.5, 26);
         const pacman = Bodies.circle(pacmanStartPos.x, pacmanStartPos.y, TILE_SIZE / 2 - 2, { // Slightly smaller radius
-            label: 'pacman', render: { fillStyle: 'yellow' }, density: 0.001, friction: 0, frictionAir: 0, restitution: 0,
+            label: 'pacman',
+            render: { fillStyle: 'yellow' },
+            density: 0.001,
+            friction: 0,
+            frictionAir: 0,
+            frictionStatic: 0,
+            restitution: 0,
             collisionFilter: {
                 category: collisionCategories.pacman,
                 mask: collisionCategories.wall | collisionCategories.ghost | collisionCategories.dot
@@ -228,8 +238,13 @@
         for (const name in ghostData) {
             const data = ghostData[name];
             ghosts[name] = Bodies.circle(data.startPos.x, data.startPos.y, TILE_SIZE / 2 - 2, { // Slightly smaller radius
-                label: `ghost-${name}`, render: { fillStyle: data.color },
-                friction: 0, frictionAir: 0, density: 0.001,
+                label: `ghost-${name}`,
+                render: { fillStyle: data.color },
+                density: 0.001,
+                friction: 0,
+                frictionAir: 0,
+                frictionStatic: 0,
+                restitution: 0,
                 collisionFilter: {
                     category: collisionCategories.ghost,
                     mask: collisionCategories.wall | collisionCategories.pacman // Can collide with walls and pacman
@@ -237,10 +252,12 @@
             });
             ghosts[name].originalColor = data.color;
             ghosts[name].startPos = data.startPos;
-            ghosts[name].state = (name === 'blinky') ? 'active' : 'inPen';
+            ghosts[name].targetPos = data.startPos; // Leash target for ghosts
+            ghosts[name].state = 'inPen'; // All ghosts start in the pen
             ghosts[name].scatterTarget = data.scatterTarget;
             ghosts[name].targetTile = data.scatterTarget;
-            ghosts[name].currentDir = 'left';
+            ghosts[name].currentDir = {x: 0, y: -1}; // Default start dir is up
+            ghosts[name].modeChangesInPen = 0; // For exit direction logic
             World.add(world, ghosts[name]);
         }
 
@@ -249,85 +266,132 @@
             for (const name in ghosts) {
                 const ghost = ghosts[name];
                 const ghostSpeed = getSpeed(ghost);
-                
-                if (ghost.state === 'inPen' || ghost.state === 'leaving' || ghost.state === 'eaten') {
-                    handleGhostPenStates(ghost, ghostSpeed);
-                    continue;
+
+                // Handle special states first
+                if (ghost.state === 'inPen') {
+                    const newY = ghost.startPos.y + Math.sin(Date.now() / 250) * 4;
+                    Body.setVelocity(ghost, { x: 0, y: (newY - ghost.position.y) * 0.1 });
+                    continue; // Skip main logic for inPen state
                 }
                 
-                const ghostTile = getTileCoords(ghost.position);
-                const centerOfTile = getTileCenter(ghostTile.x, ghostTile.y);
+                const distanceToTarget = Vector.magnitude(Vector.sub(ghost.targetPos, ghost.position));
 
-                if (getDistance(ghost.position, centerOfTile) < ghostSpeed) {
-                    const possibleDirs = {};
-                    if (!isWall(ghostTile.x, ghostTile.y - 1)) possibleDirs.up = { x: 0, y: -1 };
-                    if (!isWall(ghostTile.x, ghostTile.y + 1)) possibleDirs.down = { x: 0, y: 1 };
-                    if (!isWall(ghostTile.x - 1, ghostTile.y)) possibleDirs.left = { x: -1, y: 0 };
-                    if (!isWall(ghostTile.x + 1, ghostTile.y)) possibleDirs.right = { x: 1, y: 0 };
+                // --- DECISION LOGIC (runs when ghost reaches its target) ---
+                if (distanceToTarget < 1) {
+                    Body.setPosition(ghost, ghost.targetPos); // Snap to grid
                     
-                    const isRestrictedZone = (ghostTile.y === 14 || ghostTile.y === 23) && (ghostTile.x >= 11 && ghostTile.x <= 16);
+                    const currentTile = getTileCoords(ghost.targetPos);
+                    
+                    // State transitions based on reaching targets
+                    if (ghost.state === 'leaving') {
+                        ghost.state = 'exiting';
+                        ghost.targetPos = getTileCenter(13.5, 11);
+                        ghost.currentDir = {x: 0, y: -1}; // Move up
+                        continue;
+                    } else if (ghost.state === 'exiting') {
+                        // Decide left or right turn based on mode changes
+                        if (ghost.modeChangesInPen > 0) {
+                             ghost.currentDir = {x: 1, y: 0}; // Turn Right
+                             ghost.targetPos = getTileCenter(currentTile.x + 1, currentTile.y);
+                        } else {
+                             ghost.currentDir = {x: -1, y: 0}; // Turn Left
+                             ghost.targetPos = getTileCenter(currentTile.x - 1, currentTile.y);
+                        }
+                        ghost.state = 'active';
+                        ghost.modeChangesInPen = 0; // Reset counter
+                        continue;
+                    } else if (ghost.state === 'eaten' && currentTile.y === 11) {
+                        // If eaten and at the tile above the door, move down into the house
+                        ghost.state = 'entering';
+                        ghost.targetPos = getTileCenter(13.5, 14);
+                        ghost.currentDir = {x: 0, y: 1};
+                        continue;
+                    } else if (ghost.state === 'entering') {
+                         ghost.state = 'inPen';
+                         ghost.collisionFilter.mask = collisionCategories.wall | collisionCategories.pacman; // Restore collision
+                         ghost.render.fillStyle = ghost.originalColor;
+                         Body.setPosition(ghost, ghost.startPos);
+                         ghost.targetPos = ghost.startPos;
+                         continue;
+                    }
+
+                    // --- Main AI Decision Making ---
+                    const possibleDirs = {};
+                    if (!isWall(currentTile.x, currentTile.y - 1)) possibleDirs.up = { x: 0, y: -1 };
+                    if (!isWall(currentTile.x, currentTile.y + 1)) possibleDirs.down = { x: 0, y: 1 };
+                    if (!isWall(currentTile.x - 1, currentTile.y)) possibleDirs.left = { x: -1, y: 0 };
+                    if (!isWall(currentTile.x + 1, currentTile.y)) possibleDirs.right = { x: 1, y: 0 };
+                    
+                    // Ghosts can't go up from specific tiles
+                    const isRestrictedZone = (currentTile.y === 14 || currentTile.y === 23) && (currentTile.x >= 11 && currentTile.x <= 16);
                     if (ghost.state !== 'frightened' && isRestrictedZone) {
                         delete possibleDirs.up;
                     }
+                    
+                    // Prevent non-eaten ghosts from pathfinding into the ghost house entrance
+                    if (ghost.state !== 'eaten' && currentTile.y === 11 && (currentTile.x === 13 || currentTile.x === 14)) {
+                        delete possibleDirs.down;
+                    }
 
-                    if (ghost.currentDir === 'up') delete possibleDirs.down;
-                    if (ghost.currentDir === 'down') delete possibleDirs.up;
-                    if (ghost.currentDir === 'left') delete possibleDirs.right;
-                    if (ghost.currentDir === 'right') delete possibleDirs.left;
 
-                    let bestDir = '';
+                    // Ghosts can't reverse direction, with an exception for eaten ghosts entering the house
+                    const isEatenAtDoor = (ghost.state === 'eaten' && currentTile.y === 11);
+                    if (!isEatenAtDoor) {
+                        if (ghost.currentDir.x === 1) delete possibleDirs.left;
+                        if (ghost.currentDir.x === -1) delete possibleDirs.right;
+                        if (ghost.currentDir.y === 1) delete possibleDirs.up;
+                        if (ghost.currentDir.y === -1) delete possibleDirs.down;
+                    }
+
+
+                    let bestDirVector = null;
                     if (ghost.state === 'frightened') {
                         const choices = Object.keys(possibleDirs);
-                        bestDir = choices.length > 0 ? choices[Math.floor(Math.random() * choices.length)] : ghost.currentDir;
+                        if (choices.length > 0) {
+                           const randomDir = choices[Math.floor(Math.random() * choices.length)];
+                           bestDirVector = possibleDirs[randomDir];
+                        }
                     } else {
                         if (currentMode === 'chase') ghost.targetTile = getGhostTarget(name);
                         else if (currentMode === 'scatter') ghost.targetTile = ghost.scatterTarget;
                         
                         let minDistance = Infinity;
                         for (const dir in possibleDirs) {
-                            const nextTile = { x: ghostTile.x + possibleDirs[dir].x, y: ghostTile.y + possibleDirs[dir].y };
+                            const vector = possibleDirs[dir];
+                            const nextTile = { x: currentTile.x + vector.x, y: currentTile.y + vector.y };
                             const dist = getDistance(nextTile, ghost.targetTile);
                             if (dist < minDistance) {
                                 minDistance = dist;
-                                bestDir = dir;
+                                bestDirVector = vector;
                             }
                         }
                     }
                     
-                    if (bestDir && possibleDirs[bestDir]) {
-                        ghost.currentDir = bestDir;
-                        const velocity = possibleDirs[bestDir];
-                        Body.setPosition(ghost, centerOfTile);
-                        Body.setVelocity(ghost, { x: velocity.x * ghostSpeed, y: velocity.y * ghostSpeed });
+                    if (bestDirVector) {
+                        ghost.currentDir = bestDirVector;
+                        const nextTileCoords = { x: currentTile.x + bestDirVector.x, y: currentTile.y + bestDirVector.y };
+                        ghost.targetPos = getTileCenter(nextTileCoords.x, nextTileCoords.y);
                     }
+                }
+                
+                // --- LEASH EXECUTION (runs every frame) ---
+                const newDistanceToTarget = Vector.magnitude(Vector.sub(ghost.targetPos, ghost.position));
+                if (newDistanceToTarget > 0) {
+                    const direction = Vector.normalise(Vector.sub(ghost.targetPos, ghost.position));
+                    const velocity = Vector.mult(direction, ghostSpeed);
+                    Body.setVelocity(ghost, velocity);
+                } else {
+                    Body.setVelocity(ghost, {x: 0, y: 0});
                 }
             }
         }
 
         function handleGhostPenStates(ghost, speed) {
-            if (ghost.state === 'inPen') {
-                const newY = ghost.startPos.y + Math.sin(Date.now() / 250) * 4;
-                Body.setVelocity(ghost, { x: 0, y: (newY - ghost.position.y) * 0.1 });
-            } else if (ghost.state === 'leaving') {
-                const exitPos = getTileCenter(13.5, 14);
-                if (getDistance(ghost.position, exitPos) < TILE_SIZE / 2) {
-                    ghost.state = 'active';
-                    Body.setPosition(ghost, exitPos);
-                } else {
-                    const direction = Vector.normalise(Vector.sub(exitPos, ghost.position));
-                    Body.setVelocity(ghost, Vector.mult(direction, speed));
-                }
+            // This function now sets the initial target for a ghost leaving or re-entering the pen
+            if (ghost.state === 'leaving') {
+                ghost.targetPos = getTileCenter(13.5, 14); // Target the door
             } else if (ghost.state === 'eaten') {
-                const penTarget = getTileCenter(13.5, 14);
-                if (getDistance(ghost.position, penTarget) < TILE_SIZE) {
-                    ghost.state = 'inPen';
-                    ghost.collisionFilter.mask = collisionCategories.wall | collisionCategories.pacman; // Restore collision
-                    Body.setPosition(ghost, ghost.startPos);
-                    ghost.render.fillStyle = ghost.originalColor;
-                } else {
-                    const direction = Vector.normalise(Vector.sub(penTarget, ghost.position));
-                    Body.setVelocity(ghost, Vector.mult(direction, speed));
-                }
+                 ghost.targetPos = getTileCenter(13.5, 11); // Target the tile ABOVE the door to re-enter
             }
         }
 
@@ -369,14 +433,19 @@
                  return;
              }
              currentMode = mode;
+             // Reverse ghost direction on mode change
              for (const name in ghosts) {
-                 if (ghosts[name].state === 'active' || ghosts[name].state === 'frightened') {
-                    const vel = ghosts[name].velocity;
-                    Body.setVelocity(ghosts[name], {x: -vel.x, y: -vel.y});
-                    if (ghosts[name].currentDir === 'up') ghosts[name].currentDir = 'down';
-                    else if (ghosts[name].currentDir === 'down') ghosts[name].currentDir = 'up';
-                    else if (ghosts[name].currentDir === 'left') ghosts[name].currentDir = 'right';
-                    else if (ghosts[name].currentDir === 'right') ghosts[name].currentDir = 'left';
+                 const ghost = ghosts[name];
+                 if (ghost.state === 'active' || ghost.state === 'frightened') {
+                    ghost.currentDir.x *= -1;
+                    ghost.currentDir.y *= -1;
+                    const currentTile = getTileCoords(ghost.position);
+                    const nextTileCoords = { x: currentTile.x + ghost.currentDir.x, y: currentTile.y + ghost.currentDir.y };
+                    if(!isWall(nextTileCoords.x, nextTileCoords.y)) {
+                        ghost.targetPos = getTileCenter(nextTileCoords.x, nextTileCoords.y);
+                    }
+                 } else if (ghost.state === 'inPen' || ghost.state === 'exiting') {
+                     ghost.modeChangesInPen++;
                  }
              }
         }
@@ -414,8 +483,9 @@
                         ghost.stateBeforeFright = ghost.state;
                     }
                     if (ghost.state === 'active') {
-                        const vel = ghost.velocity;
-                        Body.setVelocity(ghost, {x: -vel.x, y: -vel.y});
+                        // Reverse direction when frightened
+                        ghost.currentDir.x *= -1;
+                        ghost.currentDir.y *= -1;
                     }
                     ghost.state = 'frightened';
                     ghost.render.fillStyle = '#2121DE';
@@ -470,6 +540,7 @@
                 const ghost = ghosts[name];
                 if (ghost.state === 'inPen' && dotCount >= releaseCounters[name]) {
                     ghost.state = 'leaving';
+                    handleGhostPenStates(ghost);
                 }
             }
         }
@@ -509,6 +580,7 @@
                 dotsEatenSinceDeath = 0;
                 
                 Body.setPosition(pacman, pacmanStartPos);
+                pacmanTargetPos = pacmanStartPos; // Reset the leash target
                 pacmanDir = {x: -1, y: 0};
                 requestedDir = {x: -1, y: 0};
                 pacman.render.visible = true;
@@ -516,11 +588,21 @@
                 for (const name in ghosts) {
                     const ghost = ghosts[name];
                     Body.setPosition(ghost, ghost.startPos);
-                    ghost.state = (name === 'blinky') ? 'active' : 'inPen';
+                    ghost.targetPos = ghost.startPos;
+                    ghost.state = 'inPen';
                     ghost.render.visible = true;
                     ghost.render.fillStyle = ghost.originalColor;
                     ghost.collisionFilter.mask = collisionCategories.wall | collisionCategories.pacman;
+                    ghost.modeChangesInPen = 0;
                 }
+                
+                // Blinky starts outside the pen, active and ready
+                const blinkyStartPos = getTileCenter(13.5, 11);
+                Body.setPosition(ghosts.blinky, blinkyStartPos);
+                ghosts.blinky.state = 'active';
+                ghosts.blinky.targetPos = getTileCenter(12.5, 11);
+                ghosts.blinky.currentDir = {x: -1, y: 0};
+
 
                 modeIndex = 0;
                 scheduleNextMode();
@@ -539,42 +621,49 @@
         });
 
         function updatePacmanMovement() {
-            if (pacmanPausedFrames > 0) return;
+            if (pacmanPausedFrames > 0) {
+                Body.setVelocity(pacman, { x: 0, y: 0 });
+                return;
+            }
 
             const pacmanSpeed = getSpeed(pacman);
-            const currentTile = getTileCoords(pacman.position);
-            
-            // Try to apply buffered direction change
-            if (requestedDir.x !== pacmanDir.x || requestedDir.y !== pacmanDir.y) {
-                const nextTileInNewDir = { x: currentTile.x + requestedDir.x, y: currentTile.y + requestedDir.y };
-                if (!isWall(nextTileInNewDir.x, nextTileInNewDir.y)) {
-                    const centerOfCurrentTile = getTileCenter(currentTile.x, currentTile.y);
-                    // If moving horizontally and close to center, snap and turn
-                    if (pacmanDir.x !== 0 && Math.abs(pacman.position.y - centerOfCurrentTile.y) < pacmanSpeed) {
-                        Body.setPosition(pacman, { x: pacman.position.x, y: centerOfCurrentTile.y });
-                        pacmanDir = { ...requestedDir };
-                    }
-                    // If moving vertically and close to center, snap and turn
-                    else if (pacmanDir.y !== 0 && Math.abs(pacman.position.x - centerOfCurrentTile.x) < pacmanSpeed) {
-                        Body.setPosition(pacman, { x: centerOfCurrentTile.x, y: pacman.position.y });
-                        pacmanDir = { ...requestedDir };
-                    }
-                }
-            }
+            const distanceToTarget = Vector.magnitude(Vector.sub(pacmanTargetPos, pacman.position));
 
-            // Check for wall in current direction
-            const nextTileInCurrentDir = { x: currentTile.x + pacmanDir.x, y: currentTile.y + pacmanDir.y };
-            if (isWall(nextTileInCurrentDir.x, nextTileInCurrentDir.y)) {
-                const centerOfCurrentTile = getTileCenter(currentTile.x, currentTile.y);
-                if (getDistance(pacman.position, centerOfCurrentTile) < pacmanSpeed) {
-                    Body.setPosition(pacman, centerOfCurrentTile);
-                    Body.setVelocity(pacman, { x: 0, y: 0 });
-                    return;
+            // Check if Pac-Man is at or very near its target tile
+            if (distanceToTarget < 1) {
+                // Snap to the target position to correct any drift
+                Body.setPosition(pacman, pacmanTargetPos);
+                Body.setVelocity(pacman, { x: 0, y: 0 });
+
+                const currentTile = getTileCoords(pacmanTargetPos);
+
+                // --- Turn Buffering Logic ---
+                // First, check if the player's requested direction is a valid move
+                const nextTileInRequestedDir = { x: currentTile.x + requestedDir.x, y: currentTile.y + requestedDir.y };
+                if ((requestedDir.x !== 0 || requestedDir.y !== 0) && !isWall(nextTileInRequestedDir.x, nextTileInRequestedDir.y)) {
+                    // Valid turn requested, so update the current direction and the new target
+                    pacmanDir = { ...requestedDir };
+                    pacmanTargetPos = getTileCenter(nextTileInRequestedDir.x, nextTileInRequestedDir.y);
+                } else {
+                    // If requested turn is not valid, check if we can continue in the current direction
+                    const nextTileInCurrentDir = { x: currentTile.x + pacmanDir.x, y: currentTile.y + pacmanDir.y };
+                    if (!isWall(nextTileInCurrentDir.x, nextTileInCurrentDir.y)) {
+                        // Continue in the same direction
+                        pacmanTargetPos = getTileCenter(nextTileInCurrentDir.x, nextTileInCurrentDir.y);
+                    }
+                    // If both are blocked, Pac-Man will simply stop at the target.
                 }
             }
             
-            // Set velocity based on final direction
-            Body.setVelocity(pacman, { x: pacmanDir.x * pacmanSpeed, y: pacmanDir.y * pacmanSpeed });
+            // --- Leash/Attractor Logic ---
+            // This part runs every frame as long as Pac-Man is not at its target
+            // It continuously pulls Pac-Man towards its current target tile
+            const newDistanceToTarget = Vector.magnitude(Vector.sub(pacmanTargetPos, pacman.position));
+            if (newDistanceToTarget > 0) {
+                 const direction = Vector.normalise(Vector.sub(pacmanTargetPos, pacman.position));
+                 const velocity = Vector.mult(direction, pacmanSpeed);
+                 Body.setVelocity(pacman, velocity);
+            }
         }
 
 
@@ -593,8 +682,16 @@
             }
             
             const pacmanTile = getTileCoords(pacman.position);
-            if (pacmanTile.x <= 0 && pacmanTile.y === 17) Body.setPosition(pacman, {x: GAME_WIDTH - TILE_SIZE * 1.5, y: pacman.position.y});
-            else if (pacmanTile.x >= MAZE_WIDTH_TILES - 1 && pacmanTile.y === 17) Body.setPosition(pacman, {x: TILE_SIZE * 1.5, y: pacman.position.y});
+            if (pacmanTile.x <= 0 && pacmanTile.y === 17) {
+                const newPos = {x: GAME_WIDTH - TILE_SIZE * 1.5, y: pacman.position.y};
+                Body.setPosition(pacman, newPos);
+                pacmanTargetPos = newPos;
+            }
+            else if (pacmanTile.x >= MAZE_WIDTH_TILES - 1 && pacmanTile.y === 17) {
+                const newPos = {x: TILE_SIZE * 1.5, y: pacman.position.y};
+                Body.setPosition(pacman, newPos);
+                pacmanTargetPos = newPos;
+            }
 
             updateGhostAI();
         });
@@ -632,7 +729,8 @@
                         ghost.state = 'eaten';
                         ghost.collisionFilter.mask = collisionCategories.wall; // Eaten ghosts only collide with walls
                         ghost.render.fillStyle = '#FFFFFF';
-                    } else if (ghost.state === 'active') {
+                        handleGhostPenStates(ghost);
+                    } else if (ghost.state === 'active' || ghost.state === 'leaving' || ghost.state === 'exiting') {
                         startDeathSequence();
                     }
                 }
@@ -705,8 +803,19 @@
         });
 
         // Start the game
-        checkGhostRelease();
-        scheduleNextMode();
+        function initGame() {
+            // Set Blinky's initial state to be outside the pen and active
+            const blinkyStartPos = getTileCenter(13.5, 11);
+            Body.setPosition(ghosts.blinky, blinkyStartPos);
+            ghosts.blinky.state = 'active';
+            ghosts.blinky.targetPos = getTileCenter(12.5, 11); // Start by moving left
+            ghosts.blinky.currentDir = {x: -1, y: 0};
+            
+            checkGhostRelease();
+            scheduleNextMode();
+        }
+
+        initGame();
 
     </script>
 </body>
